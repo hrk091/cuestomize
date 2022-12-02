@@ -6,36 +6,30 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/parser"
 	"go/token"
-	"golang.org/x/tools/go/packages"
 	"log"
+	"os"
+	"path/filepath"
 )
 
 func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	Extract(args)
+	Extract(args[0])
 }
 
-func Extract(args []string) {
-	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedImports | packages.NeedTypes | packages.NeedTypesSizes |
-			packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedDeps |
-			packages.NeedModule,
-	}
-	pkgs, err := packages.Load(cfg, args...)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, p := range pkgs {
-		fmt.Printf("%s, %s\n", p.Name, p.ID)
-		for _, f := range p.Syntax {
-			fmt.Printf("%s\n", f.Name)
-			must(dump(f))
-		}
-	}
+func Extract(path string) {
+	_, filename := filepath.Split(path)
+	buf, err := os.ReadFile(path)
+	mustNil(err)
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, filename, buf, 0)
+	mustNil(err)
+
+	mustNil(dump(f))
 }
 
 func dump(f *ast.File) error {
@@ -49,7 +43,7 @@ func dump(f *ast.File) error {
 	return nil
 }
 
-func must(err error) {
+func mustNil(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
