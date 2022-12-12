@@ -8,6 +8,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -17,7 +18,23 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	Extract(args[0])
+	convert(args[0])
+}
+
+func convert(path string) {
+	data, err := os.ReadFile(path)
+	mustNil(err)
+	in := bytes.NewReader(data)
+
+	out, err := os.OpenFile(getOutFilePath(path), os.O_CREATE|os.O_RDWR, 0666)
+	mustNil(err)
+	defer out.Close()
+
+	mustNil(convertMapKeyToString(path, in, out))
+}
+
+func getOutFilePath(filename string) string {
+	return filename[:len(filename)-len(".go")] + "_decls.go"
 }
 
 type VisitFunc func(n ast.Node) ast.Visitor
@@ -26,15 +43,7 @@ func (v VisitFunc) Visit(n ast.Node) ast.Visitor {
 	return v(n)
 }
 
-func Extract(path string) {
-	_, filename := filepath.Split(path)
-	buf, err := os.ReadFile(path)
-	mustNil(err)
-
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filename, buf, 0)
-	mustNil(err)
-
+func convertMapKeyToString(path string, in io.Reader, out io.Writer) error {
 	var v ast.Visitor
 	v = VisitFunc(func(n ast.Node) ast.Visitor {
 		if n == nil {
@@ -61,23 +70,33 @@ func Extract(path string) {
 		return w
 	})
 
-	fmt.Printf("package %s_decls\n\n", f.Name)
-	for _, d := range f.Decls {
-		if _, ok := d.(*ast.GenDecl); ok {
-			ast.Walk(v, d)
-			mustNil(dump(d))
-		}
-	}
-}
-
-func dump(f any) error {
-	buf := &bytes.Buffer{}
+	_, filename := filepath.Split(path)
 	fset := token.NewFileSet()
-	err := format.Node(buf, fset, f)
+	f, err := parser.ParseFile(fset, filename, in, 0)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s\n\n", buf.String())
+
+	fmt.Fprintf(out, "package %s_decls\n\n", f.Name)
+	for _, d := range f.Decls {
+		if _, ok := d.(*ast.GenDecl); ok {
+			ast.Walk(v, d)
+			if err := dump(d, out); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func dump(f any, buf io.Writer) error {
+	fset := token.NewFileSet()
+	if err := format.Node(buf, fset, f); err != nil {
+		return err
+	}
+	if _, err := buf.Write([]byte("\n\n")); err != nil {
+		return err
+	}
 	return nil
 }
 
