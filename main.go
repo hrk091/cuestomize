@@ -12,13 +12,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func main() {
 	flag.Parse()
 	args := flag.Args()
-
-	convert(args[0])
+	path := validate(args)
+	convert(path)
 }
 
 func convert(path string) {
@@ -33,8 +34,22 @@ func convert(path string) {
 	mustNil(convertMapKeyToString(path, in, out))
 }
 
-func getOutFilePath(filename string) string {
-	return filename[:len(filename)-len(".go")] + "_decls.go"
+func validate(args []string) string {
+	if len(args) == 0 {
+		log.Fatal("target file does not specified")
+	}
+	path := args[0]
+	if filepath.Ext(path) != ".go" {
+		log.Fatal("given file is not CUE file")
+	}
+	return path
+}
+
+func getOutFilePath(path string) string {
+	dir, filename := filepath.Split(path)
+	trimmed := strings.TrimSuffix(dir, "/")
+	dir = trimmed + "_decls"
+	return dir + "/" + filename
 }
 
 type VisitFunc func(n ast.Node) ast.Visitor
@@ -76,8 +91,7 @@ func convertMapKeyToString(path string, in io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-
-	fmt.Fprintf(out, "package %s_decls\n\n", f.Name)
+	fmt.Fprintf(out, "package %s_decls", f.Name)
 	for _, d := range f.Decls {
 		if _, ok := d.(*ast.GenDecl); ok {
 			ast.Walk(v, d)
@@ -90,11 +104,9 @@ func convertMapKeyToString(path string, in io.Reader, out io.Writer) error {
 }
 
 func dump(f any, buf io.Writer) error {
+	fmt.Fprintf(buf, "\n\n")
 	fset := token.NewFileSet()
 	if err := format.Node(buf, fset, f); err != nil {
-		return err
-	}
-	if _, err := buf.Write([]byte("\n\n")); err != nil {
 		return err
 	}
 	return nil
