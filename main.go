@@ -8,6 +8,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"golang.org/x/mod/modfile"
 	"io"
 	"log"
 	"os"
@@ -18,8 +19,10 @@ import (
 func main() {
 	flag.Parse()
 	args := flag.Args()
-	path := validate(args)
+	path := validateArgs(args)
+	validateIsModuleRoot()
 	convert(path)
+	showCueGetScript(path)
 }
 
 func convert(path string) {
@@ -27,14 +30,35 @@ func convert(path string) {
 	mustNil(err)
 	in := bytes.NewReader(data)
 
-	out, err := os.OpenFile(getOutFilePath(path), os.O_CREATE|os.O_RDWR, 0666)
+	outDir, outFile := getOutFilePath(path)
+	mustNil(os.MkdirAll(outDir, 0750))
+	out, err := os.OpenFile(filepath.Join(outDir, outFile), os.O_CREATE|os.O_RDWR, 0666)
 	mustNil(err)
 	defer out.Close()
 
 	mustNil(convertMapKeyToString(path, in, out))
 }
 
-func validate(args []string) string {
+func showCueGetScript(path string) {
+	outDir, _ := getOutFilePath(path)
+	modPath, err := resolveModuleName()
+	mustNil(err)
+
+	fmt.Println(cueGetScript(modPath, outDir))
+}
+
+func cueGetScript(modPath, outDir string) string {
+	return fmt.Sprintf(`
+# Init cue.mod if not setup yet
+if [[ ! -d cue.mod ]]; then
+    cue mod init %s 
+fi
+# Generate cue type defs
+cue get go %s
+`, modPath, filepath.Join(modPath, outDir))
+}
+
+func validateArgs(args []string) string {
 	if len(args) == 0 {
 		log.Fatal("target file does not specified")
 	}
@@ -45,11 +69,29 @@ func validate(args []string) string {
 	return path
 }
 
-func getOutFilePath(path string) string {
+func validateIsModuleRoot() {
+	if _, err := os.Stat("go.mod"); err != nil {
+		log.Fatal("Must run at go module root.")
+	}
+}
+
+func resolveModuleName() (string, error) {
+	buf, err := os.ReadFile("go.mod")
+	if err != nil {
+		return "", err
+	}
+	modPath := modfile.ModulePath(buf)
+	if modPath == "" {
+		return "", fmt.Errorf("resolve module name from go.mod")
+	}
+	return modPath, nil
+}
+
+func getOutFilePath(path string) (string, string) {
 	dir, filename := filepath.Split(path)
 	trimmed := strings.TrimSuffix(dir, "/")
-	dir = trimmed + "_decls"
-	return dir + "/" + filename
+	dir = filepath.Join("types", trimmed)
+	return dir, filename
 }
 
 type VisitFunc func(n ast.Node) ast.Visitor
@@ -91,7 +133,7 @@ func convertMapKeyToString(path string, in io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "package %s_decls", f.Name)
+	fmt.Fprintf(out, "package %s", f.Name)
 	for _, d := range f.Decls {
 		if _, ok := d.(*ast.GenDecl); ok {
 			ast.Walk(v, d)
