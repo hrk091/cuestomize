@@ -1,11 +1,10 @@
-module github.com/hrk091/cuestomize
+module github.com/hrk091/kuestomize
 
 go 1.18
 
 require (
 	github.com/openconfig/goyang v1.2.0
 	github.com/openconfig/ygot v0.25.3
-	golang.org/x/tools v0.3.0
 )
 
 require (
@@ -14,7 +13,6 @@ require (
 	github.com/google/go-cmp v0.5.7 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/openconfig/gnmi v0.0.0-20220920173703-480bf53a74d2 // indirect
-	golang.org/x/mod v0.7.0 // indirect
 	golang.org/x/net v0.2.0 // indirect
 	golang.org/x/sys v0.2.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
